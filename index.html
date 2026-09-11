@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#3d3028">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>Book Corner</title>
+<style>
+:root{--bg:#efe3d2;--panel:#faf4eb;--ink:#3d3028;--muted:#7b695c;--line:#d7c3ad;--wood:#7b563e;--wood2:#4b3528;--accent:#9d765b}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:linear-gradient(#f6eee4,#e5d3bf);min-height:100vh}
+body.dark{--bg:#25272d;--panel:#34373f;--ink:#f4eade;--muted:#bbb0a4;--line:#52555f;--wood:#4d3930;--wood2:#2b211c;--accent:#b28c70;background:linear-gradient(#202228,#15171b)}
+button,input,select{font:inherit}button{cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:12px;padding:10px 13px}button.primary{font-weight:700;background:color-mix(in srgb,var(--accent) 24%,var(--panel))}
+.shell{max-width:1180px;margin:auto;padding:20px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted)}h1{margin:3px 0 0;font-size:28px}.toolbar{display:flex;gap:8px;flex-wrap:wrap}
+.library{margin-top:16px;background:var(--bg);border:1px solid var(--line);border-radius:26px;padding:20px;box-shadow:0 20px 45px rgba(50,35,25,.12)}.intro strong{font:700 22px Georgia,serif}.intro small{display:block;color:var(--muted);margin-top:4px}
+.rack-wrap{margin-top:24px}.rack-head{display:flex;justify-content:space-between;align-items:end}.rack-head h2{font:700 19px Georgia,serif;margin:0}.rack-head span{font-size:12px;color:var(--muted)}
+.rack{margin-top:9px;background:color-mix(in srgb,var(--wood) 12%,transparent);border-radius:15px 15px 5px 5px;padding:15px 12px 0;overflow:hidden}.spines{min-height:188px;display:flex;align-items:flex-end;gap:3px;overflow-x:auto;padding:0 4px 10px}.spine{padding:6px 4px;border:0;border-radius:3px;box-shadow:3px 5px 9px rgba(0,0,0,.16);display:flex;justify-content:center;align-items:center}.spine:hover{transform:translateY(-4px)}.spine span{writing-mode:vertical-rl;transform:rotate(180deg);font:700 12px Georgia,serif;max-height:145px;overflow:hidden}.decor{height:110px;width:60px;flex:0 0 auto;border:1px dashed var(--line);border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:29px;margin-left:7px}.wood{height:16px;background:linear-gradient(var(--wood),var(--wood2));border-radius:3px 3px 9px 9px;box-shadow:0 5px 0 color-mix(in srgb,var(--wood2) 55%,transparent)}
+.drawer,.login{margin-top:18px;border:1px solid var(--line);border-radius:20px;background:var(--panel);padding:18px}.hidden{display:none}.drawer-head{display:flex;justify-content:space-between;gap:14px}.drawer h3,.login h2{font:700 24px Georgia,serif;margin:3px 0}.hint{font-size:12px;color:var(--muted);line-height:1.5}
+label{display:grid;gap:6px;margin-top:12px;font-size:13px}input,select{min-height:43px;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--ink);padding:0 12px}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}.pdf{width:100%;height:72vh;border:1px solid var(--line);border-radius:14px;margin-top:14px;background:white}
+.secret-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}.card,.empty{border:1px solid var(--line);border-radius:14px;padding:13px}.card small{display:block;color:var(--muted);margin:4px 0 10px}.status{font-size:12px;color:var(--muted);margin-top:8px}
+@media(max-width:700px){.shell{padding:12px}.library{padding:14px}.secret-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div id="auth"></div>
+  <div id="main" class="hidden">
+    <div class="top">
+      <div><div class="eyebrow">Offline private library</div><h1>Book Corner ✦</h1></div>
+      <div class="toolbar">
+        <button id="installBtn" class="hidden">Install</button>
+        <button id="theme">☾ Dark</button>
+        <button id="backup">Export backup</button>
+        <button id="restore">Import backup</button>
+        <button id="logout">Log out</button>
+        <button id="add" class="primary">+ Add PDF</button>
+      </div>
+    </div>
+    <div class="library">
+      <div class="intro"><strong>Spine-out library</strong><small>Books and reading data stay on this device. The GitHub site only hosts the app code.</small></div>
+      <div id="racks"></div>
+    </div>
+    <div id="drawer" class="drawer hidden"></div>
+  </div>
+</div>
+<script>
+const $=(s,e=document)=>e.querySelector(s);
+const DB_NAME="bookCornerGitHubDB", STORE="books", META="meta";
+let db,state={dark:false,secretId:null,userHash:null,passHash:null,hiddenPassHash:null},session=false,deferredPrompt=null;
+
+function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;,"'":"&#39;"}[c]))}
+function tx(store,mode="readonly"){return db.transaction(store,mode).objectStore(store)}
+function reqp(r){return new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function hash(s){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+async function openDB(){
+ db=await new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore(STORE,{keyPath:"id"});d.createObjectStore(META)};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+ state=await reqp(tx(META).get("state"))||state;
+ if(navigator.storage?.persist) try{await navigator.storage.persist()}catch{}
+ showAuth();
+}
+async function saveState(){await reqp(tx(META,"readwrite").put(state,"state"))}
+async function allBooks(){return await reqp(tx(STORE).getAll())}
+async function putBook(b){await reqp(tx(STORE,"readwrite").put(b))}
+async function delBook(id){await reqp(tx(STORE,"readwrite").delete(id))}
+
+function showAuth(){
+ $("#main").classList.add("hidden");
+ if(!state.userHash||!state.passHash){
+   $("#auth").innerHTML=`<div class="login"><div class="eyebrow">First-time setup</div><h2>Create your one Book Corner account</h2>
+   <form id="setup"><label>Username<input id="u" required autocomplete="username"></label><label>Password<input id="p" type="password" minlength="6" required autocomplete="new-password"></label>
+   <label>Hidden Corner password<input id="hp" type="password" minlength="6" required></label>
+   <div class="actions"><button class="primary">Create account</button></div><p class="hint">These credentials are stored only on this device as hashes. If you clear this site's browser data, the local library can be lost unless you exported a backup.</p></form></div>`;
+   $("#setup").onsubmit=async e=>{e.preventDefault();state.userHash=await hash($("#u").value.trim().toLowerCase());state.passHash=await hash($("#p").value);state.hiddenPassHash=await hash($("#hp").value);await saveState();session=true;showMain()};
+ } else {
+   $("#auth").innerHTML=`<div class="login"><div class="eyebrow">Private access</div><h2>Book Corner login</h2>
+   <form id="login"><label>Username<input id="u" required autocomplete="username"></label><label>Password<input id="p" type="password" required autocomplete="current-password"></label>
+   <div id="err" class="status"></div><div class="actions"><button class="primary">Log in</button></div></form></div>`;
+   $("#login").onsubmit=async e=>{e.preventDefault();const ok=(await hash($("#u").value.trim().toLowerCase()))===state.userHash&&(await hash($("#p").value)===state.passHash);if(!ok){$("#err").textContent="Wrong username or password.";return}session=true;showMain()};
+ }
+}
+async function showMain(){
+ $("#auth").innerHTML="";$("#main").classList.remove("hidden");document.body.classList.toggle("dark",!!state.dark);$("#theme").textContent=state.dark?"☀ Light":"☾ Dark";await render();
+}
+function shelf(title,key,books,decor){const bs=books.filter(b=>!b.hidden&&b.shelf===key);return `<section class="rack-wrap"><div class="rack-head"><h2>${title}</h2><span>${bs.length} books</span></div><div class="rack"><div class="spines">${bs.map((b,i)=>spine(b,i)).join("")}<div class="decor">${decor}</div></div><div class="wood"></div></div></section>`}
+function spine(b,i){const h=138+((i*17+b.title.length*3)%48),w=34+((i*9+b.title.length)%18);return `<button class="spine" data-id="${b.id}" style="height:${h}px;width:${w}px;background:${b.color};color:${b.text}"><span>${esc(b.title)}</span></button>`}
+async function render(){const books=await allBooks();$("#racks").innerHTML=shelf("Currently Reading","current",books,"🕯️")+shelf("Favorites & To Read","tbr",books,"🌿")+shelf("Finished Collection","done",books,"☕");document.querySelectorAll(".spine").forEach(el=>{el.onclick=()=>openBook(el.dataset.id);el.oncontextmenu=e=>{e.preventDefault();if(el.dataset.id===state.secretId)unlockHidden()}})}
+function drawer(html){$("#drawer").innerHTML=html;$("#drawer").classList.remove("hidden");$("#drawer").scrollIntoView({behavior:"smooth",block:"nearest"})}
+function closeDrawer(){$("#drawer").classList.add("hidden");$("#drawer").innerHTML=""}
+
+$("#theme").onclick=async()=>{state.dark=!state.dark;await saveState();document.body.classList.toggle("dark",state.dark);$("#theme").textContent=state.dark?"☀ Light":"☾ Dark"};
+$("#logout").onclick=()=>{session=false;closeDrawer();showAuth()};
+$("#add").onclick=()=>importForm(false);
+
+function importForm(hidden){
+ drawer(`<form id="f"><div class="drawer-head"><div><div class="eyebrow">${hidden?"Private library":"Main library"}</div><h3>Import PDF</h3></div><button type="button" id="x">✕</button></div>
+ <label>PDF<input id="file" type="file" accept="application/pdf" required></label><label>Title<input id="title" required></label><label>Author<input id="author"></label>
+ ${hidden?"":`<label>Shelf<select id="shelf"><option value="current">Currently Reading</option><option value="tbr">Favorites & To Read</option><option value="done">Finished Collection</option></select></label>`}
+ <div class="actions"><button class="primary">Save into Book Corner</button><button type="button" id="cancel">Cancel</button></div>
+ <p class="hint">No artificial book limit in the app. Practical capacity depends on your browser/device storage quota.</p></form>`);
+ $("#x").onclick=$("#cancel").onclick=closeDrawer;
+ $("#f").onsubmit=async e=>{e.preventDefault();const file=$("#file").files[0];if(!file)return;const palette=[["#6f4d3e","#fff0dd"],["#496054","#f5ead8"],["#70566c","#fff0ec"],["#40506a","#f7e9ca"],["#8a6b4d","#fff4df"]];const books=await allBooks(),p=palette[books.length%palette.length],id=crypto.randomUUID();await putBook({id,title:$("#title").value.trim(),author:$("#author").value.trim()||"Unknown author",shelf:hidden?"hidden":$("#shelf").value,hidden,progress:0,lastPage:1,color:p[0],text:p[1],blob:file});closeDrawer();await render();if(hidden)openHidden()};
+}
+async function openBook(id){const b=await reqp(tx(STORE).get(id));if(!b)return;drawer(`<div class="drawer-head"><div><div class="eyebrow">Reading nook</div><h3>${esc(b.title)}</h3><small>${esc(b.author)}</small></div><button id="x">✕</button></div><div class="actions"><button id="read" class="primary">Open PDF</button>${!b.hidden?`<button id="secret">${state.secretId===b.id?"Secret entrance is this book":"Make secret entrance"}</button>`:""}<button id="del">Delete</button></div><div id="reader"></div>`);$("#x").onclick=closeDrawer;$("#read").onclick=()=>{const url=URL.createObjectURL(b.blob);$("#reader").innerHTML=`<iframe class="pdf" src="${url}"></iframe>`};if($("#secret"))$("#secret").onclick=async()=>{state.secretId=b.id;await saveState();await render();closeDrawer()};$("#del").onclick=async()=>{if(confirm("Delete this saved copy from Book Corner?")){await delBook(b.id);if(state.secretId===b.id){state.secretId=null;await saveState()}closeDrawer();render()}}}
+async function unlockHidden(){const pw=prompt("Hidden Corner password:");if(pw===null)return;if(await hash(pw)!==state.hiddenPassHash)return;openHidden()}
+async function openHidden(){const books=(await allBooks()).filter(b=>b.hidden);drawer(`<div class="drawer-head"><div><div class="eyebrow">Private library</div><h3>Hidden Corner 🌙</h3></div><button id="x">🔒</button></div><div class="actions"><button id="addPrivate" class="primary">+ Private PDF</button><button id="wp">Wattpad</button><button id="ink">Inkitt</button></div><div class="secret-grid">${books.length?books.map(b=>`<div class="card"><strong>${esc(b.title)}</strong><small>${esc(b.author)}</small><button data-p="${b.id}">Open</button></div>`).join(""):`<div class="empty">No private PDFs yet.</div>`}</div><p class="hint">Wattpad/Inkitt require internet and open as normal web pages in this hosted version.</p>`);$("#x").onclick=closeDrawer;$("#addPrivate").onclick=()=>importForm(true);$("#wp").onclick=()=>window.open("https://www.wattpad.com/","_blank","noopener");$("#ink").onclick=()=>window.open("https://www.inkitt.com/","_blank","noopener");document.querySelectorAll("[data-p]").forEach(x=>x.onclick=()=>openBook(x.dataset.p))}
+$("#backup").onclick=async()=>{const books=await allBooks();const out=[];for(const b of books){const arr=Array.from(new Uint8Array(await b.blob.arrayBuffer()));out.push({...b,blob:null,bytes:arr})}const payload={version:1,state,books:out};const blob=new Blob([JSON.stringify(payload)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="book-corner-backup.json";a.click();URL.revokeObjectURL(a.href)}
+$("#restore").onclick=()=>{const i=document.createElement("input");i.type="file";i.accept=".json,application/json";i.onchange=async()=>{const f=i.files[0];if(!f)return;const data=JSON.parse(await f.text());if(!data||!Array.isArray(data.books))return alert("Invalid backup");for(const b of data.books){const blob=new Blob([new Uint8Array(b.bytes||[])],{type:"application/pdf"});delete b.bytes;b.blob=blob;await putBook(b)}state=data.state||state;await saveState();alert("Backup restored.");showMain()};i.click()}
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPrompt=e;$("#installBtn").classList.remove("hidden")});
+$("#installBtn").onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;$("#installBtn").classList.add("hidden")};
+
+if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js");
+openDB().catch(err=>{document.body.innerHTML="<pre>"+esc(String(err))+"</pre>"});
+</script>
+</body>
+</html>
